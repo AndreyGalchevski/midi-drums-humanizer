@@ -4,5 +4,8 @@
   },
   "dependencies": {
     "@tonejs/midi": "^2.0.28"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4"
   }
 }
