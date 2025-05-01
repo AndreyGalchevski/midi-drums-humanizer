@@ -13,6 +13,19 @@ const BLAST_START_NOTE = 69;
 
 const BLAST_END_NOTE = 70;
 
+const CYMBAL_NOTES = [49, 51, 53, 55, 57];
+
+const TOM_NOTES = [41, 43, 45, 47];
+
+const VELOCITY_TO_RESPECT = 0.4015748031496063;
+
+function applyVelocityRamp(notes, start = 0.4, end = 0.95) {
+	const step = (end - start) / Math.max(1, notes.length - 1);
+	for (let i = 0; i < notes.length; i++) {
+		notes[i].velocity = start + i * step + (Math.random() - 0.5) * 0.02; // add tiny jitter
+	}
+}
+
 (async () => {
 	const filePath = process.argv[2];
 
@@ -87,6 +100,10 @@ const BLAST_END_NOTE = 70;
 					note.time += (Math.random() * 2 - 1) / 1000;
 				}
 			} else {
+				if (note.velocity <= VELOCITY_TO_RESPECT) {
+					continue;
+				}
+
 				let v = wave[i % wave.length];
 				const sixteenth = (note.time * 4) % 1 < 0.01;
 
@@ -105,6 +122,39 @@ const BLAST_END_NOTE = 70;
 					note.time -= (Math.random() * 4) / 1000;
 				}
 			}
+		}
+
+		let cymbalGroup = [];
+		for (let i = 0; i < notes.length; i++) {
+			const note = notes[i];
+			if (CYMBAL_NOTES.includes(note.midi)) {
+				cymbalGroup.push(note);
+			} else {
+				if (cymbalGroup.length >= 3) {
+					applyVelocityRamp(cymbalGroup, 0.4, 0.95);
+				}
+				cymbalGroup = [];
+			}
+		}
+
+		if (cymbalGroup.length >= 3) {
+			applyVelocityRamp(cymbalGroup, 0.4, 0.95);
+		}
+
+		let tomGroup = [];
+		for (let i = 0; i < notes.length; i++) {
+			const note = notes[i];
+			if (TOM_NOTES.includes(note.midi)) {
+				tomGroup.push(note);
+			} else {
+				if (tomGroup.length >= 3) {
+					applyVelocityRamp(tomGroup, 0.65, 0.9);
+				}
+				tomGroup = [];
+			}
+		}
+		if (tomGroup.length >= 3) {
+			applyVelocityRamp(tomGroup, 0.65, 0.9);
 		}
 	}
 
