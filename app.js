@@ -3,6 +3,16 @@ const { existsSync } = require('node:fs');
 const path = require('node:path');
 const { Midi } = require('@tonejs/midi');
 
+const SNARE_NOTES = [38, 40];
+
+const KICK_NOTES = [38, 40];
+
+const HI_HAT_NOTES = [42, 46];
+
+const BLAST_START_NOTE = 69;
+
+const BLAST_END_NOTE = 70;
+
 (async () => {
 	const filePath = process.argv[2];
 
@@ -17,49 +27,85 @@ const { Midi } = require('@tonejs/midi');
 
 	const midi = new Midi(data);
 
+	const blastSections = [];
+
 	for (const track of midi.tracks) {
-		// Only process drum channel
+		let currentBlastStart = null;
+
+		// Track marker notes and remove them
+		track.notes = track.notes.filter((note) => {
+			if (note.midi === BLAST_START_NOTE) {
+				currentBlastStart = note.time;
+				return false; // remove from final output
+			}
+			if (note.midi === BLAST_END_NOTE && currentBlastStart !== null) {
+				blastSections.push({ start: currentBlastStart, end: note.time });
+				currentBlastStart = null;
+				return false; // remove from final output
+			}
+			return true;
+		});
+	}
+
+	const isBlastMode = (time) =>
+		blastSections.some(
+			(section) => time >= section.start && time <= section.end,
+		);
+
+	for (const track of midi.tracks) {
 		if (track.channel !== 9) {
-			return;
+			continue;
 		}
 
 		const notes = track.notes;
-
-		// Sort notes by time
 		notes.sort((a, b) => a.time - b.time);
 
-		// Smoothed velocity wave
 		const baseVelocity = 0.85;
-		const wave = [...Array(notes.length)].map((_, i) => {
-			return baseVelocity + 0.1 * Math.sin(i * 0.4) + 0.03 * Math.sin(i * 3);
-		});
+		const wave = [...Array(notes.length)].map(
+			(_, i) => baseVelocity + 0.1 * Math.sin(i * 0.4) + 0.03 * Math.sin(i * 3),
+		);
 
-		notes.forEach((note, i) => {
-			// ---- Velocity Control ----
-			let v = wave[i % wave.length];
+		for (let i = 0; i < notes.length; i++) {
+			const note = notes[i];
 
-			// Emphasize certain hits (e.g. every 4th 16th-note)
-			const sixteenth = (note.time * 4) % 1 < 0.01;
+			if (isBlastMode(note.time)) {
+				if (SNARE_NOTES.includes(note.midi)) {
+					note.velocity = 0.7 + Math.random() * 0.1; // lowered velocity
+					note.time += (Math.random() * 3) / 1000;
+				}
 
-			if (sixteenth && i % 4 === 0 && note.midi === 38) {
-				v += 0.1; // snare accent
+				if (HI_HAT_NOTES.includes(note.midi)) {
+					note.velocity = 0.65 + Math.random() * 0.1; // slightly lower too
+					note.time += (Math.random() * 2 - 1) / 1000;
+				}
+
+				if (KICK_NOTES.includes(note.midi)) {
+					note.velocity = Math.min(
+						1,
+						Math.max(0.7, note.velocity + (Math.random() - 0.5) * 0.1),
+					);
+					note.time += (Math.random() * 2 - 1) / 1000;
+				}
+			} else {
+				let v = wave[i % wave.length];
+				const sixteenth = (note.time * 4) % 1 < 0.01;
+
+				if (sixteenth && i % 4 === 0 && note.midi === 38) {
+					v += 0.1;
+				}
+
+				v = Math.max(0.05, Math.min(1.0, v));
+				note.velocity = v;
+
+				if (SNARE_NOTES.includes(note.midi)) {
+					note.time += (Math.random() * 8 + 4) / 1000;
+				}
+
+				if (HI_HAT_NOTES.includes(note.midi)) {
+					note.time -= (Math.random() * 4) / 1000;
+				}
 			}
-
-			// Apply soft cap
-			v = Math.max(0.05, Math.min(1.0, v));
-			note.velocity = v;
-
-			// ---- Timing Control ----
-			// Drag snare slightly behind (4-12ms delay)
-			if ([38, 40].includes(note.midi)) {
-				note.time += (Math.random() * 8 + 4) / 1000;
-			}
-
-			// Push hats slightly ahead
-			if ([42, 46].includes(note.midi)) {
-				note.time -= (Math.random() * 4) / 1000;
-			}
-		});
+		}
 	}
 
 	const filename = path.basename(filePath, path.extname(filePath));
@@ -69,4 +115,5 @@ const { Midi } = require('@tonejs/midi');
 	);
 
 	await writeFile(outPath, Buffer.from(midi.toArray()));
+	console.log(`✅ Humanized file saved to:\n${outPath}`);
 })();
